@@ -1,0 +1,71 @@
+handler  TValue tags written   call targets (RVA)                flags
+h0    -                   F4C580                            reads-global
+h1    4                   15273F0,1527850,F58AB0            
+h2    4,6,9               F4C460,F593C0                     
+h3    -                   -                                 
+h4    8                   F58EC0                            
+h5    6                   -                                 
+h6    0,5                 F59130                            
+h7    4                   F574C0,F58CE0                     
+h8    4                   1524EA0                           
+h9    4,6,9               F4C460,F58AB0,F593C0              
+h10   -                   -                                 
+h11   -                   -                                 
+h12   0,5,6,8,9           F4C460,F55B60,F59130,F59390       reads-global
+h13   -                   F4D160,F57540                     reads-global
+h14   0                   F58EC0                            
+h15   6                   F4C460,F58AB0,F593C0              
+h16   4,6,9               F4C460,F58AB0,F593C0              
+h17   4,6,9               F4C460,F58AB0,F593C0              
+h18   -                   -                                 reads-global
+h19   -                   -                                 reads-global
+h20   0,6,8,9             F58EC0,F59390                     reads-global
+h21   6                   -                                 
+h22   -                   -                                 
+h23   1                   -                                 
+h24   4,6,9               F4C460,F58AB0,F593C0              
+h25   4,5                 F4D540,F59090                     
+h26   -                   -                                 
+h27   -                   -                                 reads-global
+h28   4,5,8               F55B60,F59130                     reads-global
+h29   -                   F4D160                            reads-global
+h30   -                   -                                 
+h31   -                   F58770                            
+h32   4                   -                                 
+h33   4,5                 F4D540,F58FF0                     
+h34   0                   -                                 
+h35   -                   -                                 
+h36   4,8                 F58EC0                            
+h37   -                   -                                 reads-global
+h38   4                   -                                 
+h39   -                   -                                 
+h40   4                   -                                 
+h41   6,9                 F44D90,F4C460,F58D90,F59390       reads-global
+h42   0,6,8               F43E60,F43EC0,F4D5E0,F58EC0,F59390  reads-global
+h43   0                   F43EC0                            
+h44   0                   F4D440                            
+h45   4                   F4D3A0                            
+h46   1                   -                                 
+h47   -                   -                                 
+h48   4                   1527850                           
+h49   4,5                 F4D540,F59090                     
+h50   0,8                 F59390                            
+h51   0                   -                                 
+h52   -                   F55560                            reads-global
+h53   5,8                 F55B60,F578E0                     
+h54   0                   -                                 
+h55   -                   -                                 
+h56   4                   1524EA0                           
+h57   4,5                 F4D540,F58FF0                     
+h58   0xb,6               F555F0,F55880                     
+h59   -                   F43EC0                            
+h60   5                   F55B80                            
+h61   8                   F55E40,F57290                     reads-global
+h62   -                   F4C580                            reads-global
+h63   -                   -                                 
+h64   4,6,9               F4C460,F593C0                     
+h65   6,9                 F44D90,F4C460,F58D90,F59390       reads-global
+h66   5,8                 F55B60,F59130                     reads-global
+h67   0                   F4D160                            reads-global
+h68   0xb                 -                                 
+h69   8                   F57690                            
