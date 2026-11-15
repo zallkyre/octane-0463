@@ -150,3 +150,19 @@ set_target_properties(compile_test PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin"
 )
+
+# ---- reference Luau VM (opcode handler fingerprinting only) ----
+file(GLOB LUAU_VM_SOURCES "${CMAKE_SOURCE_DIR}/third_party/luau/VM/src/*.cpp")
+add_library(luau_vm STATIC ${LUAU_VM_SOURCES})
+target_include_directories(luau_vm PUBLIC "${CMAKE_SOURCE_DIR}/third_party/luau/VM/include" PRIVATE "${CMAKE_SOURCE_DIR}/third_party/luau/VM/src")
+target_compile_features(luau_vm PUBLIC cxx_std_17)
+if (MSVC)
+  target_compile_options(luau_vm PRIVATE /O2 /utf-8 /wd4996)
+endif()
+
+add_executable(vmref tools/vmref.cpp)
+target_link_libraries(vmref PRIVATE luau_vm)
+target_compile_definitions(vmref PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+set_target_properties(vmref PROPERTIES
+  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin"
+  RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/bin")
