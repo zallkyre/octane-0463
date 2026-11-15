@@ -1,0 +1,33 @@
+# build output
+build32/
+build64/
+build32dev/
+*.obj
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.log
+
+# binaries (source-only repo)
+*.exe
+*.dll
+!ui/assets/*.ico
+
+# third-party exploit payloads - not ours to redistribute
+diddy/
+pekora/
+alx.vmp.dll
+DiddyWare*.dll
+
+# local runtime bits
+crash.txt
+auto.log
+window.txt
+payload.cfg
+
+# editor / OS
+.vs/
+.vscode/
+Thumbs.db
+desktop.ini

@@ -1,0 +1,19 @@
+; copy to payload.cfg next to payload.dll
+;
+; addresses:  "rva:0x1234"  = offset from the main module base  (default for
+;                            bare values below 256 MB, which is how offset
+;                            dumps are usually published)
+;            "abs:0x7FF6A1B2C3D4" = absolute address
+;            bare 0x7FF6...       = treated as absolute
+;
+; Lua API (bind on inject). Leave a line out if you do not have that address.
+;loadbuffer = 0x1234
+;pcall      = 0x5678
+;tostring   = 0x9ABC
+;gettop     = 0xDEF0
+;settop     = 0x1111
+
+; optional: auto-hook a pattern on load
+;scan = 48 8B ?? ?? ?? ?? 0F 85
+;len = 14
+;autohook = 1
