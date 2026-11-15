@@ -296,3 +296,20 @@ copy build32dev\bin\payload_dev.dll ui\payload.dll
 # restart client, inject, then:
 INIT ; GLOBALS
 ```
+
+---
+
+## 14. DiddyWare2021M on 0.463 — tested, crashes (2026-11-15)
+
+Injected the attached DiddyWare2021M.dll (SHA-256 8AD15BD8...8189, x86, base 0x10000000)
+with the stock LoadLibraryW injector into live pid 13508:
+
+`
+[injector] remote LoadLibraryW returned 0x60F80000
+window appeared: "Synapse X Revival Edition | Fernsclub support | Sponsored by Sir Meme"
+client crashed within seconds; OctanePlayer + launcher gone
+`
+
+So the DLL loads and spawns its Synapse-revival front-end, but the client dies (blank
+cmd then crash) — consistent with §6: it targets a different build (0.477-class).
+The DLL route is out for 0.463. Bytecode/opcode reconstruction is the only path.
