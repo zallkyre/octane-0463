@@ -936,3 +936,61 @@ void LuaRunPendingOnLuaThread() {
     }
     g_execCv.notify_all();
 }
+
+// ---- capture the game's own bytecode from luau_load ----
+
+namespace {
+
+void LoadHookCb(SavedRegs* regs) {
+    uintptr_t esp = regs->esp;   // original stack: [esp]=ret, then args
+    static int logged = 0;
+
+    auto tryLog = [&](uintptr_t dataOff, uintptr_t sizeOff) -> bool {
+        uint32_t data = 0, size = 0;
+        if (!SafeRead(esp + dataOff, &data, 4)) return false;
+        if (!SafeRead(esp + sizeOff, &size, 4)) return false;
+        if (data == 0 || size < 8 || size > (1u << 20)) return false;
+        uint32_t n = size > 160 ? 160 : size;
+        uint8_t buf[160];
+        if (!SafeRead(data, buf, n)) return false;
+        std::cout << "[load off=0x" << std::hex << dataOff << " data=0x" << data
+                  << " size=" << std::dec << size << " bytes=";
+        char hx[4];
+        for (uint32_t i = 0; i < n; ++i) {
+            std::snprintf(hx, sizeof(hx), "%02X", buf[i]);
+            std::cout << hx;
+        }
+        std::cout << "\n";
+        return true;
+    };
+
+    if (logged < 8) {
+        for (int k = 0; k < 6 && logged < 8; ++k) {
+            uintptr_t dataOff = 0x8 + static_cast<uintptr_t>(k) * 4;
+            if (tryLog(dataOff, dataOff + 4)) {
+                ++logged;
+                break;
+            }
+        }
+    }
+    LuaRunPendingOnLuaThread();
+}
+
+}  // namespace
+
+bool LuaHookLoad() {
+    ModuleRange m = MainModule();
+    if (m.base == 0) return false;
+    uintptr_t addr = m.base + 0xF4C710;   // luau_load
+    if (IsHooked()) RemoveInlineHook();
+    SetHookCallback(&LoadHookCb);
+    HookPlanInfo plan = PlanHook(addr, kHookMinLen);
+    if (!plan.ok) {
+        std::cout << "hookload: " << plan.reason << "\n";
+        return false;
+    }
+    if (!InstallInlineHook(addr, kHookMinLen)) return false;
+    std::cout << "hooked luau_load at 0x" << std::hex << std::uppercase << addr
+              << std::dec << " len=" << HookPatchLen() << "\n";
+    return true;
+}

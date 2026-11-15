@@ -246,6 +246,8 @@ DWORD WINAPI ServerProc(LPVOID) {
                 }
             } else if (request.rfind("STRUCT ", 0) == 0) {
                 reply = LuaProbeStructures(B64Decode(request.substr(7)));
+            } else if (request == "HOOKLOAD") {
+                reply = LuaHookLoad() ? "hooked luau_load (play now; then LOG)" : "failed";
             } else if (request.rfind("FIELD ", 0) == 0) {
                 std::string out;
                 std::string name = B64Decode(request.substr(6));

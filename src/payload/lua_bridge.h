@@ -25,6 +25,9 @@ std::string LuaProbeField(const std::string& name, const std::string& seedByteco
 // needing LUA_GLOBALSINDEX or a confirmed lua_getfield. Memory-read only.
 std::string LuaDumpGlobals();
 void LuaArmCapture();                    // take state from next hook hit
+// Re-targets the inline hook to luau_load and logs the first bytes of every
+// chunk the game loads (real client bytecode, real opcode values).
+bool LuaHookLoad();
 
 // Installs a global `loadstring(source)` implemented with our Luau compiler.
 // Needs lua_pushcclosure and lua_setfield bound; returns false without them.
