@@ -79,6 +79,7 @@ PROBE <b64 source>      -> compile=N load_status=N   (load only, no call)
 LOADTEST <b64 bytecode> -> load_status=N
 STRUCT <b64 bytecode>   -> TValue / closure / Proto dump
 FIELD <b64 name>        -> queued globals probe (see §6)
+GLOBALS                 -> scan lua_State for the globals Table, list its keys (§8)
 HOOK rva:0x...          -> replace hook
 HOOKPCALL               -> hook lua_pcall (0xF41980)
 UNHOOK                  -> restore bytes
@@ -237,3 +238,61 @@ Environment notes:
 - `LUA_GLOBALSINDEX` (-10002) does not exist in Luau (§6).
 - `luaS_newlstr` = `0x1356DB0` and `lua_pushlstring` = `0xF41C80` are new facts.
 - The `luau_load` caller at RVA `0x2BF547` is `luaL_loadbuffer` — bytecode only.
+
+---
+
+## 13. Update — §8 superseded by a direct scan (this session)
+
+Re-reading the §8 dump against real geometry:
+
+- `L+0x0C = 0x2EAA59B8 = base - 0x10` -> that is **`stack`** (stack base), so the
+  stack field lives at `+0x0C`, not `+0x24` as 0.501's header assumes.
+- `L+0x18 = 0x2098E8E0` is **`global_State*`** (process-wide GC / string table), NOT
+  the globals Table. §3's "global = +0x18 obfuscated" is wrong: it is a plain pointer
+  to `global_State`.
+- `L+0x1C = 0x2EAA5C28` lands in the stack region -> consistent with `stack_last`, not
+  `ci`.
+
+So `top/base/global` align with 0.501 but the surrounding fields do not, and the
+globals Table is not at a fixed known slot. Instead of chasing `ci -> env`, the payload
+now scans for the table directly.
+
+### New: `GLOBALS` (pipe)
+
+Runs on the Lua thread (`\x01GLOBALS` sentinel), then:
+
+1. Walks every 4-aligned TValue slot in `lua_State[0..0x180]`.
+2. Keeps slots whose `tt == 6` (TABLE) and whose pointer resolves to a structurally
+   valid Table: `lsizenode <= 20`, committed `node` array, node bytes <= 16 MB.
+3. Ranks candidates by count of identifier-shaped string keys.
+4. Prints the winner's `stateOff` (which pins the `l_gt` slot for this build), its
+   `lsizenode` / `sizearray` / `node`, then `FOUND <name> tag=<n>` for each of
+   `loadstring print game require _G script Instance pcall typeof warn getfenv setfenv`
+   that it actually holds, followed by up to 300 `name (tag n)` lines.
+
+Struct offsets (0.501 geometry; validated by the walk, not assumed):
+`TString.len +0x10`, `TString.data +0x14`; `Table.lsizenode +0x0B`,
+`Table.sizearray +0x10`, `Table.node +0x20`; `LuaNode` 32 bytes, `val.tt +0x0C`,
+`key.value +0x10`, `key.tt +0x1C`; tags string `5`, table `6`.
+
+Reads use `SafeRead` + `VirtualQuery` (committed, no guard) so a wrong offset is
+discarded, never dereferenced blindly. Memory-read only: no `lua_getfield`, no
+`LUA_GLOBALSINDEX`, no `luaH_get`.
+
+### Reading the result for §11
+
+- `FOUND loadstring` -> a compiler is present. Bind its address (tag 7 = function),
+  push it via the found `l_gt`, and exec works with no bytecode work.
+- No `loadstring` (and `print`/`game` present, as expected) -> runtime-only VM, which
+  matches "no compiler strings in the exe". Then the path is opcode-table
+  reconstruction: find the dispatch switch in `luaV_execute`, dump it with
+  `pefind switch`, fingerprint each handler, remap 0.501 opcodes to this build.
+
+### Build/verify
+
+```
+cmake --build build32dev --config Release --target payload
+copy build32dev\bin\payload_dev.dll ui\payload.dll
+# restart client, inject, then:
+INIT ; GLOBALS
+```

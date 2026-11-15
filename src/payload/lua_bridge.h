@@ -20,6 +20,10 @@ void LuaRunPendingOnLuaThread();          // called from the hook callback
 int LuaLoadRaw(const std::string& bytes);  // guarded luau_load probe, returns status
 std::string LuaProbeStructures(const std::string& bytecode);  // diagnostic dump
 std::string LuaProbeField(const std::string& name, const std::string& seedBytecode);
+// Scans the live lua_State for the globals Table TValue, walks its hash nodes and
+// lists the global names. Answers "is there a loadstring / game / print" without
+// needing LUA_GLOBALSINDEX or a confirmed lua_getfield. Memory-read only.
+std::string LuaDumpGlobals();
 void LuaArmCapture();                    // take state from next hook hit
 
 // Installs a global `loadstring(source)` implemented with our Luau compiler.

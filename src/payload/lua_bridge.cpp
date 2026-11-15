@@ -5,6 +5,7 @@
 
 #include "Luau/Compiler.h"
 
+#include <cctype>
 #include <chrono>
 #include <cstdio>
 #include <condition_variable>
@@ -646,6 +647,212 @@ std::string LuaProbeField(const std::string& name, const std::string& seedByteco
     return ProbeField(name, seedBytecode);
 }
 
+namespace {
+
+// Luau 0.501 struct geometry, x86. Used only as a starting hypothesis: every
+// candidate table is validated against readable memory before it is trusted.
+constexpr uint32_t kTvTt = 0x0C;            // TValue.tt
+constexpr uint32_t kTStringLen = 0x10;      // TString.len
+constexpr uint32_t kTStringData = 0x14;     // TString.data
+constexpr uint32_t kTableLsizenode = 0x0B;  // Table.lsizenode
+constexpr uint32_t kTableSizearray = 0x10;  // Table.sizearray
+constexpr uint32_t kTableNode = 0x20;       // Table.node
+constexpr uint32_t kNodeSize = 0x20;        // sizeof(LuaNode)
+constexpr uint32_t kNodeValTt = 0x0C;       // LuaNode.val.tt
+constexpr uint32_t kNodeKeyVal = 0x10;      // LuaNode.key.value
+constexpr uint32_t kNodeKeyTt = 0x1C;       // LuaNode.key.tt (low nibble)
+constexpr uint32_t kTagString = 5;
+constexpr uint32_t kTagTable = 6;
+constexpr uint32_t kMaxNodeBytes = 16u * 1024u * 1024u;
+
+bool ReadU32(uintptr_t addr, uint32_t& v) { return SafeRead(addr, &v, 4); }
+
+bool Committed(uintptr_t addr) {
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(reinterpret_cast<LPCVOID>(addr), &mbi, sizeof(mbi)) == 0) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    return (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) == 0;
+}
+
+bool PlausiblePtr(uint32_t p) {
+    return p >= 0x10000 && p < 0x7FFF0000 && (p & 3) == 0 && Committed(p);
+}
+
+bool ReadLuaString(uint32_t tstr, std::string& out) {
+    out.clear();
+    if (!PlausiblePtr(tstr)) return false;
+    uint32_t len = 0;
+    if (!ReadU32(tstr + kTStringLen, len)) return false;
+    if (len > 1024) return false;
+    out.assign(len, '\0');
+    if (len != 0 && !SafeRead(tstr + kTStringData, &out[0], len)) {
+        out.clear();
+        return false;
+    }
+    return true;
+}
+
+bool Identifierish(const std::string& s) {
+    if (s.empty() || s.size() > 128) return false;
+    for (unsigned char c : s) {
+        if (!(std::isalnum(c) != 0 || c == '_' || c == '.' || c == '-')) return false;
+    }
+    return true;
+}
+
+struct GlobalHit {
+    uintptr_t stateOff = 0;
+    uint32_t tablePtr = 0;
+    uint32_t nodePtr = 0;
+    uint32_t sizearray = 0;
+    int lsizenode = 0;
+    int keyCount = 0;
+    int idCount = 0;
+    std::vector<std::pair<std::string, uint32_t>> entries;  // name, value tag
+};
+
+// Reads one table's hash part. Fails (returns false) on any structural doubt so a
+// wrong offset hypothesis is discarded instead of producing garbage.
+bool WalkTable(uint32_t table, GlobalHit& hit) {
+    hit.tablePtr = table;
+    hit.entries.clear();
+    hit.keyCount = 0;
+    hit.idCount = 0;
+
+    uint8_t lsz = 0;
+    if (!SafeRead(table + kTableLsizenode, &lsz, 1)) return false;
+    if (lsz > 20) return false;
+
+    uint32_t node = 0;
+    if (!ReadU32(table + kTableNode, node)) return false;
+    if (node == 0) return false;
+    ReadU32(table + kTableSizearray, hit.sizearray);
+
+    uint32_t count = 1u << lsz;
+    uint64_t bytes = static_cast<uint64_t>(count) * kNodeSize;
+    if (bytes > kMaxNodeBytes) return false;
+    if (!Committed(node)) return false;
+    if (!Committed(node + static_cast<uintptr_t>(bytes) - 1)) return false;
+
+    hit.lsizenode = lsz;
+    hit.nodePtr = node;
+
+    for (uint32_t i = 0; i < count; ++i) {
+        uintptr_t n = node + static_cast<uintptr_t>(i) * kNodeSize;
+        uint32_t ktt = 0;
+        if (!ReadU32(n + kNodeKeyTt, ktt)) continue;
+        if ((ktt & 0xF) != kTagString) continue;
+        uint32_t kp = 0;
+        if (!ReadU32(n + kNodeKeyVal, kp)) continue;
+        std::string name;
+        if (!ReadLuaString(kp, name)) continue;
+        uint32_t vtt = 0;
+        ReadU32(n + kNodeValTt, vtt);
+        ++hit.keyCount;
+        if (Identifierish(name)) ++hit.idCount;
+        if (hit.entries.size() < 400) hit.entries.emplace_back(name, vtt);
+    }
+    return true;
+}
+
+}  // namespace
+
+std::string LuaDumpGlobals() {
+    std::ostringstream out;
+    if (g_state == 0) return "no state - attach first\n";
+    uintptr_t L = g_state;
+
+    out << "L=0x" << std::hex << std::uppercase << L << std::dec << "\n";
+
+    out << "raw:";
+    for (uintptr_t off = 0; off < 0x40; off += 4) {
+        uint32_t w = 0;
+        if (SafeRead(L + off, &w, 4)) {
+            out << " [" << std::hex << std::uppercase << off << "]=" << w;
+        } else {
+            break;
+        }
+    }
+    out << std::dec << "\n";
+
+    uint32_t gs = 0;
+    if (ReadU32(L + 0x18, gs)) {
+        out << "global_State* @ +0x18 = 0x" << std::hex << std::uppercase << gs
+            << std::dec << "\n";
+    }
+
+    GlobalHit best;
+    bool haveBest = false;
+
+    // Treat every aligned word in a struct as a possible Table* and let the walk
+    // decide. This drops any dependency on where (or whether) a TValue tag sits.
+    auto scan = [&](uint32_t base, uint32_t len, const char* label) {
+        if (!PlausiblePtr(base)) return;
+        for (uint32_t off = 0; off + 4 <= len; off += 4) {
+            uint32_t w = 0;
+            if (!ReadU32(base + off, w)) continue;
+            if (!PlausiblePtr(w)) continue;
+            GlobalHit h;
+            if (!WalkTable(w, h)) continue;
+            if (h.keyCount == 0) continue;
+            out << label << "+0x" << std::hex << std::uppercase << off
+                << " table=0x" << w << std::dec << " lszi=" << h.lsizenode
+                << " sizearray=" << h.sizearray << " keys=" << h.keyCount
+                << " ids=" << h.idCount << "\n";
+            if (!haveBest || h.idCount > best.idCount) {
+                best = h;
+                haveBest = true;
+            }
+        }
+    };
+
+    scan(static_cast<uint32_t>(L), 0x200, "L");
+    if (PlausiblePtr(gs)) {
+        scan(gs, 0x400, "GS");
+        // mainthread: a committed lua_State whose +0x18 points back at global_State
+        for (uint32_t off = 0; off + 4 <= 0x400; off += 4) {
+            uint32_t p = 0;
+            if (!ReadU32(gs + off, p)) continue;
+            if (!PlausiblePtr(p)) continue;
+            uint32_t back = 0;
+            if (!ReadU32(p + 0x18, back)) continue;
+            if (back != gs) continue;
+            out << "mainthread? GS+0x" << std::hex << std::uppercase << off
+                << " -> 0x" << p << std::dec << "\n";
+            scan(p, 0x200, "MT");
+            break;
+        }
+    }
+
+    if (!haveBest) {
+        out << "no table found in L/GS/MT; dump the raw words above\n";
+        return out.str();
+    }
+
+    out << "== best table=0x" << std::hex << std::uppercase << best.tablePtr
+        << std::dec << " lszi=" << best.lsizenode << " keys=" << best.keyCount
+        << " ids=" << best.idCount << " ==\n";
+
+    static const char* wanted[] = {"loadstring", "print",   "game", "require",
+                                   "_G",         "script",  "Instance", "pcall",
+                                   "typeof",     "warn",    "getfenv", "setfenv"};
+    for (const char* w : wanted) {
+        for (const auto& e : best.entries) {
+            if (e.first == w) {
+                out << "FOUND " << w << " tag=" << e.second << "\n";
+                break;
+            }
+        }
+    }
+
+    int shown = 0;
+    for (const auto& e : best.entries) {
+        out << "  " << e.first << " (tag " << e.second << ")\n";
+        if (++shown >= 300) break;
+    }
+    return out.str();
+}
+
 // ---- cross-thread submission: runs on the Lua thread inside the hook ----
 
 bool LuaSubmit(const std::string& source, std::string& output, unsigned timeoutMs) {
@@ -715,6 +922,8 @@ void LuaRunPendingOnLuaThread() {
     std::string result;
     if (isBytecode && bytecode.rfind("\x01PROBE:", 0) == 0)
         result = ProbeField(bytecode.substr(7), std::string());   // runs on the Lua thread
+    else if (isBytecode && bytecode == "\x01GLOBALS")
+        result = LuaDumpGlobals();
     else if (isBytecode)
         result = ExecBytecode(bytecode);
     else

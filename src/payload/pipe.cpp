@@ -251,6 +251,10 @@ DWORD WINAPI ServerProc(LPVOID) {
                 std::string name = B64Decode(request.substr(6));
                 if (LuaSubmitBytecode(std::string("\x01PROBE:") + name, out, 5000)) reply = out;
                 else reply = "timeout - no Lua call happened";
+            } else if (request == "GLOBALS") {
+                std::string out;
+                if (LuaSubmitBytecode(std::string("\x01GLOBALS"), out, 5000)) reply = out;
+                else reply = "timeout - no Lua call happened";
             } else if (request.rfind("PROBE ", 0) == 0) {
                 std::string src = B64Decode(request.substr(6));
                 try {
